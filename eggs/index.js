@@ -2,7 +2,7 @@ const puppeteer = require("puppeteer");
 
 const puppeteerArgs = process.env.PUPPETEER_ARGS 
                       ? process.env.PUPPETEER_ARGS.split(' ') 
-                      : ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
+                      : ['--no-sandbox', '--disable-setuid-sandbox'];
 
 const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
 
