@@ -1,6 +1,6 @@
 FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FONTEND=noninteractive
 ENV TZ=UTC
 
 ENV USER=container
@@ -60,10 +60,25 @@ RUN pip3 install --upgrade pip && \
 RUN mkdir -p $HOME && \
     chown -R $UID:$GID $HOME
 
+RUN cat > /entrypoint.sh << 'EOF'
+cd /home/container
+
+export DISPLAY=:99
+Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+
+if [ -n "${STARTUP}" ]; then
+    MODIFIED_STARTUP=$(echo ${STARTUP} | sed -e 's/{{/${/g' -e 's/}}/}/g')
+    echo -e "\033[1;33mcontainer@localhost~ \033[0m${MODIFIED_STARTUP}"
+    eval ${MODIFIED_STARTUP}
+else
+    echo -e "\033[1;33mcontainer@localhost~ \033[0mNo STARTUP command detected, running default Python shell"
+    python3
+fi
+EOF
+
+RUN chmod +x /entrypoint.sh
+
 WORKDIR $HOME
 USER container
-
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 CMD ["/bin/bash", "/entrypoint.sh"]
