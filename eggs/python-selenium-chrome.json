@@ -1,0 +1,92 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2025-10-28T12:00:00-03:00",
+    "name": "Python Selenium Chrome",
+    "author": "Carloz2er",
+    "description": "Um simples Egg que insala o Python + Chrome",
+    "features": null,
+    "docker_images": {
+        "Python Selenium Chrome": "ghcr.io/carloz2er/pterodactyl:python-selenium-chrome"
+    },
+    "file_denylist": [],
+    "startup": "if [[ -d .git ]] && [[ {{AUTO_UPDATE}} == \"1\" ]]; then git pull; fi; if [[ ! -z {{PY_PACKAGES}} ]]; then pip install -U --prefix .local {{PY_PACKAGES}}; fi; if [[ -f requirements.txt ]]; then pip install -U --prefix .local -r requirements.txt; fi; if [[ ! -f {{BOT_PY_FILE}} ]]; then echo \"Error: {{BOT_PY_FILE}} not found!\"; exit 1; fi; /usr/local/bin/python {{BOT_PY_FILE}}",
+    "config": {
+        "files": "{}",
+        "startup": "{\r\n    \"done\": \"startup complete\"\r\n}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n# Python Selenium Chrome Installation Script\n\napt update\napt install -y git curl wget ca-certificates\n\nmkdir -p /mnt/server\ncd /mnt/server\n\necho \"==========================================\"\necho \"Python Selenium Chrome Environment Setup\"\necho \"==========================================\"\n\n# Check if user wants to clone a repository\nif [ ! -z \"${INSTALL_REPO}\" ]; then\n    echo \"Cloning repository: ${INSTALL_REPO}\"\n    \n    if [ -z \"${INSTALL_BRANCH}\" ]; then\n        INSTALL_BRANCH=\"main\"\n    fi\n    \n    # Try to clone the repository\n    if git clone -b ${INSTALL_BRANCH} https://github.com/${INSTALL_REPO}.git /tmp/repo; then\n        echo \"Repository cloned successfully!\"\n        cp -r /tmp/repo/* /mnt/server/\n        rm -rf /tmp/repo\n    else\n        echo \"Failed to clone repository. Creating example file...\"\n        CREATE_EXAMPLE=1\n    fi\nelse\n    echo \"No repository specified. Creating example file...\"\n    CREATE_EXAMPLE=1\nfi\n\n# Create example file if needed\nif [ \"${CREATE_EXAMPLE}\" == \"1\" ]; then\n    cat > app.py <<'EOF'\nfrom selenium import webdriver\nfrom selenium.webdriver.chrome.options import Options\nfrom selenium.webdriver.chrome.service import Service\nfrom selenium.webdriver.common.by import By\nimport time\nimport os\n\nprint(\"🚀 Starting Selenium bot...\")\n\n# Get Chrome options from environment\nchrome_opts = os.getenv('CHROME_OPTIONS', '--no-sandbox --disable-dev-shm-usage --headless --disable-gpu')\n\n# Configure Chrome options\nchrome_options = Options()\nfor opt in chrome_opts.split():\n    chrome_options.add_argument(opt)\n\nchrome_options.add_argument('--window-size=1920,1080')\n\nprint(\"🔧 Chrome options configured\")\n\n# Initialize driver\ntry:\n    driver = webdriver.Chrome(options=chrome_options)\n    print(\"✅ Chrome driver initialized successfully\")\n    \n    # Test navigation\n    print(\"🌐 Navigating to example.com...\")\n    driver.get(\"https://example.com\")\n    \n    print(f\"📄 Page title: {driver.title}\")\n    print(f\"🔗 Current URL: {driver.current_url}\")\n    \n    # Get page content\n    content = driver.find_element(By.TAG_NAME, \"body\").text\n    print(f\"📝 Page content preview: {content[:200]}...\")\n    \n    print(\"✅ Test completed successfully!\")\n    \nexcept Exception as e:\n    print(f\"❌ Error: {e}\")\n    \nfinally:\n    if 'driver' in locals():\n        driver.quit()\n        print(\"🛑 Driver closed\")\n\n# Keep container running\nprint(\"⏳ Bot finished. Keeping container alive...\")\nprint(\"   Press Ctrl+C in console to stop\")\n\nwhile True:\n    time.sleep(60)\nEOF\n\n    echo \"Example app.py created!\"\nfi\n\n# Create example requirements.txt if it doesn't exist\nif [ ! -f requirements.txt ]; then\n    cat > requirements.txt <<'EOF'\nselenium>=4.15.0\nwebdriver-manager>=4.0.0\nrequests>=2.31.0\nbeautifulsoup4>=4.12.0\nEOF\n    echo \"Example requirements.txt created!\"\nfi\n\necho \"==========================================\"\necho \"Installation complete!\"\necho \"==========================================\"\necho \"Files in container:\"\nls -la /mnt/server/\necho \"==========================================\"",
+            "container": "python:3.11-slim",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Bot Python File",
+            "description": "The main Python file to run your Selenium application",
+            "env_variable": "BOT_PY_FILE",
+            "default_value": "app.py",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Auto Update",
+            "description": "Pull the latest files from Git on startup (0 = disabled, 1 = enabled)",
+            "env_variable": "AUTO_UPDATE",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Additional Python Packages",
+            "description": "Install additional Python packages (space separated, e.g., discord.py pandas)",
+            "env_variable": "PY_PACKAGES",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:500",
+            "field_type": "text"
+        },
+        {
+            "name": "Install Repo",
+            "description": "GitHub repo to clone on installation (format: username/repository)",
+            "env_variable": "INSTALL_REPO",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Install Branch",
+            "description": "Branch to clone from GitHub repository",
+            "env_variable": "INSTALL_BRANCH",
+            "default_value": "main",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Chrome Options",
+            "description": "Chrome command line options (space separated)",
+            "env_variable": "CHROME_OPTIONS",
+            "default_value": "--no-sandbox --disable-dev-shm-usage --headless --disable-gpu",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:500",
+            "field_type": "text"
+        }
+    ]
+}
