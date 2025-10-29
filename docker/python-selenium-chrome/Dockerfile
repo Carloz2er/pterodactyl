@@ -50,6 +50,7 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     xdg-utils \
     unzip \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 RUN wget -q -O /tmp/google-chrome-key.pub https://dl.google.com/linux/linux_signing_key.pub && \
