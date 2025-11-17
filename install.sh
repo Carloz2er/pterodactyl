@@ -2,34 +2,78 @@
 
 clear
 echo "----------------------------------------------------------------------"
-echo "   INSTALADOR AUTOMATICO JEXACTYL BR + WINGS"
-echo "   DISTRIBUIDO POR: CZ7 Solutions - cz7.host"
+echo "   INSTALADOR AUTOMATICO JEXACTYL BR + WINGS (UNIVERSAL)"
+echo "   AUTORIA: CARLOS DAVI FERREIRA CAFERRO"
+echo "   ORGANIZACAO: CZ7 Solutions"
 echo "----------------------------------------------------------------------"
 sleep 3
 
-echo "Atualizando o sistema e instalando dependencias necessarias..."
-apt -y update
-apt -y upgrade
-apt -y install software-properties-common curl apt-transport-https ca-certificates gnupg
+OS_ID=$(grep ^ID= /etc/os-release | cut -d= -f2 | tr -d '"')
+WEB_USER="www-data"
+PHP_SOCKET=""
+PHP_SERVICE=""
 
-echo "Adicionando repositorio PHP..."
-add-apt-repository -y ppa:ondrej/php
-apt -y update
+echo "Sistema detectado: $OS_ID"
+sleep 2
 
-echo "Instalando PHP e extensoes..."
-apt -y install php8.1 php8.1-{common,cli,gd,mysql,mbstring,bcmath,xml,fpm,curl,zip} mariadb-server nginx tar unzip git redis-server
+if [[ "$OS_ID" == "ubuntu" ]] || [[ "$OS_ID" == "debian" ]]; then
+    echo "Iniciando instalacao para base Debian/Ubuntu..."
+    apt -y update
+    apt -y install software-properties-common curl apt-transport-https ca-certificates gnupg lsb-release
+
+    if [[ "$OS_ID" == "ubuntu" ]]; then
+        add-apt-repository -y ppa:ondrej/php
+    else
+        curl -sSLo /usr/share/keyrings/deb.sury.org-php.gpg https://packages.sury.org/php/apt.gpg
+        echo "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list
+        apt -y update
+    fi
+
+    apt -y install php8.1 php8.1-{common,cli,gd,mysql,mbstring,bcmath,xml,fpm,curl,zip} mariadb-server nginx tar unzip git redis-server
+    
+    WEB_USER="www-data"
+    PHP_SOCKET="/run/php/php8.1-fpm.sock"
+    PHP_SERVICE="php8.1-fpm"
+
+elif [[ "$OS_ID" == "fedora" ]] || [[ "$OS_ID" == "centos" ]] || [[ "$OS_ID" == "almalinux" ]] || [[ "$OS_ID" == "rocky" ]]; then
+    echo "Iniciando instalacao para base RHEL/Fedora..."
+    
+    if [[ "$OS_ID" == "fedora" ]]; then
+        dnf -y install https://rpms.remirepo.net/fedora/remi-release-$(rpm -E %fedora).rpm
+    else
+        dnf -y install epel-release
+        dnf -y install https://rpms.remirepo.net/enterprise/remi-release-$(rpm -E %rhel).rpm
+    fi
+    
+    dnf -y module reset php
+    dnf -y module enable php:remi-8.1
+    dnf -y install php php-{common,cli,gd,mysqlnd,mbstring,bcmath,xml,fpm,curl,zip,json} mariadb-server nginx tar unzip git redis
+
+    WEB_USER="nginx"
+    PHP_SOCKET="/run/php-fpm/www.sock"
+    PHP_SERVICE="php-fpm"
+    
+    setenforce 0
+    sed -i 's/^SELINUX=.*/SELINUX=permissive/g' /etc/selinux/config
+    
+    sed -i 's/apache/nginx/g' /etc/php-fpm.d/www.conf
+    
+else
+    echo "Sistema Operacional nao suportado automaticamente."
+    exit 1
+fi
 
 echo "Instalando Composer..."
 curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
 echo "Iniciando e habilitando servicos..."
-systemctl enable --now redis-server
+systemctl enable --now redis
 systemctl enable --now mariadb
 systemctl enable --now nginx
+systemctl enable --now $PHP_SERVICE
 
 echo "----------------------------------------------------------------------"
 echo "CONFIGURACAO DO BANCO DE DADOS"
-echo "O script vai configurar o banco automaticamente para voce."
 echo "----------------------------------------------------------------------"
 
 DB_PASSWORD=$(openssl rand -base64 14)
@@ -38,10 +82,8 @@ mysql -u root -e "CREATE USER 'jexactyl'@'127.0.0.1' IDENTIFIED BY '$DB_PASSWORD
 mysql -u root -e "GRANT ALL PRIVILEGES ON panel.* TO 'jexactyl'@'127.0.0.1' WITH GRANT OPTION;"
 mysql -u root -e "FLUSH PRIVILEGES;"
 
-echo "Banco de dados criado com sucesso."
-echo "Usuario: jexactyl"
-echo "Senha gerada: $DB_PASSWORD"
-sleep 10
+echo "Banco configurado. Senha: $DB_PASSWORD"
+sleep 2
 
 echo "Baixando arquivos do Jexactyl..."
 mkdir -p /var/www/jexactyl
@@ -49,61 +91,54 @@ cd /var/www/jexactyl
 curl -L https://github.com/Next-Panel/Jexactyl-BR/releases/latest/download/panel.tar.gz | tar -xzv
 chmod -R 755 storage/* bootstrap/cache/
 
-echo "Instalando dependencias do painel via Composer..."
+echo "Instalando dependencias do painel..."
 composer install --no-dev --optimize-autoloader
 
-echo "Copiando arquivo de ambiente..."
+echo "Configurando .env..."
 cp .env.example .env
 php artisan key:generate --force
-
-echo "Configurando o ambiente no .env..."
 php artisan p:environment:setup
 
-echo "Configurando banco de dados no .env..."
 export DB_PASSWORD
 sed -i "s/DB_PASSWORD=/DB_PASSWORD=$DB_PASSWORD/" .env
 sed -i "s/DB_HOST=127.0.0.1/DB_HOST=127.0.0.1/" .env
 sed -i "s/DB_DATABASE=panel/DB_DATABASE=panel/" .env
 sed -i "s/DB_USERNAME=jexactyl/DB_USERNAME=jexactyl/" .env
 
-echo "Executando migracoes do banco..."
+echo "Executando migracoes..."
 php artisan migrate --seed --force
 
 echo "----------------------------------------------------------------------"
-echo "CRIACAO DO USUARIO ADMINISTRADOR..."
-echo "Preencha os dados abaixo para criar o admin do painel."
+echo "CRIACAO DO USUARIO ADMINISTRADOR (CARLOS DAVI FERREIRA CAFERRO)"
 echo "----------------------------------------------------------------------"
 php artisan p:user:make
 
-echo "Definindo permissoes de arquivos..."
-chown -R www-data:www-data /var/www/jexactyl/*
+echo "Ajustando permissoes para usuario web: $WEB_USER"
+chown -R $WEB_USER:$WEB_USER /var/www/jexactyl/*
 
 echo "----------------------------------------------------------------------"
 echo "CONFIGURACAO DE DOMINIO E REDE"
-echo "Escolha o tipo de instalacao:"
-echo "1) Local / IP (Sem SSL - Apenas HTTP)"
-echo "2) Dominio com SSL (HTTPS - Recomendado)"
-read -p "Digite o numero da opcao (1 ou 2): " NETWORK_OPT
+echo "1) Local / IP (HTTP)"
+echo "2) Dominio com SSL (HTTPS)"
+read -p "Opcao (1 ou 2): " NETWORK_OPT
 
 if [ "$NETWORK_OPT" == "2" ]; then
     echo "----------------------------------------------------------------------"
-    echo "ATENCAO - CONFIGURACAO CLOUDFLARE"
-    echo "Voce escolheu usar dominio."
-    echo "Acesse sua conta na Cloudflare agora."
-    echo "Crie um apontamento TIPO A com o nome do seu subdominio."
-    echo "Aponte para o IP deste servidor."
-    echo "IMPORTANTE: Deixe a nuvem CINZA (DNS Only) inicialmente para gerar o SSL."
+    echo "ATENCAO CLOUDFLARE: Aponte seu subdominio (Tipo A) para o IP."
+    echo "Use nuvem CINZA (DNS Only) para gerar o SSL."
     echo "----------------------------------------------------------------------"
-    read -p "Digite seu dominio completo (ex: painel.seusite.com): " USER_DOMAIN
-    read -p "Pressione ENTER apos ter configurado o DNS na Cloudflare..."
+    read -p "Dominio completo (ex: painel.host.com): " USER_DOMAIN
+    read -p "Pressione ENTER apos configurar o DNS..."
     
-    echo "Instalando Certbot..."
-    apt -y install certbot python3-certbot-nginx
+    if [[ "$OS_ID" == "fedora" ]] || [[ "$OS_ID" == "centos" ]] || [[ "$OS_ID" == "almalinux" ]] || [[ "$OS_ID" == "rocky" ]]; then
+        dnf -y install certbot python3-certbot-nginx
+    else
+        apt -y install certbot python3-certbot-nginx
+    fi
     
-    echo "Gerando certificado SSL..."
     certbot --nginx -d $USER_DOMAIN --non-interactive --agree-tos -m admin@$USER_DOMAIN
     
-    cat > /etc/nginx/sites-available/jexactyl.conf <<EOF
+    cat > /etc/nginx/conf.d/jexactyl.conf <<EOF
 server {
     listen 80;
     server_name $USER_DOMAIN;
@@ -124,7 +159,6 @@ server {
     
     client_max_body_size 100m;
     client_body_timeout 120s;
-
     sendfile off;
 
     location / {
@@ -133,7 +167,7 @@ server {
 
     location ~ \.php$ {
         fastcgi_split_path_info ^(.+\.php)(/.+)$;
-        fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+        fastcgi_pass unix:$PHP_SOCKET;
         fastcgi_index index.php;
         include fastcgi_params;
         fastcgi_param PHP_VALUE "upload_max_filesize = 100M \n post_max_size=100M";
@@ -146,19 +180,16 @@ server {
         fastcgi_send_timeout 300;
         fastcgi_read_timeout 300;
     }
-
-    location ~ /\.ht {
-        deny all;
-    }
+    
+    location ~ /\.ht { deny all; }
 }
 EOF
 
 else
-    echo "Voce escolheu usar apenas IP."
     MY_IP=$(curl -s https://ipinfo.io/ip)
-    echo "Seu IP e: $MY_IP"
+    echo "IP detectado: $MY_IP"
     
-    cat > /etc/nginx/sites-available/jexactyl.conf <<EOF
+    cat > /etc/nginx/conf.d/jexactyl.conf <<EOF
 server {
     listen 80;
     server_name $MY_IP;
@@ -170,7 +201,6 @@ server {
 
     client_max_body_size 100m;
     client_body_timeout 120s;
-
     sendfile off;
 
     location / {
@@ -179,7 +209,7 @@ server {
 
     location ~ \.php$ {
         fastcgi_split_path_info ^(.+\.php)(/.+)$;
-        fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+        fastcgi_pass unix:$PHP_SOCKET;
         fastcgi_index index.php;
         include fastcgi_params;
         fastcgi_param PHP_VALUE "upload_max_filesize = 100M \n post_max_size=100M";
@@ -192,41 +222,33 @@ server {
         fastcgi_send_timeout 300;
         fastcgi_read_timeout 300;
     }
-
-    location ~ /\.ht {
-        deny all;
-    }
+    
+    location ~ /\.ht { deny all; }
 }
 EOF
 fi
 
-ln -s /etc/nginx/sites-available/jexactyl.conf /etc/nginx/sites-enabled/jexactyl.conf
-rm /etc/nginx/sites-enabled/default
-service nginx restart
+rm -rf /etc/nginx/sites-enabled/default
+systemctl restart nginx
 
 echo "----------------------------------------------------------------------"
-echo "INSTALANDO O WINGS (DAEMON)"
+echo "INSTALANDO WINGS E DOCKER"
 echo "----------------------------------------------------------------------"
 
 mkdir -p /etc/pterodactyl
 curl -L -o /usr/local/bin/wings "https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")"
 chmod u+x /usr/local/bin/wings
 
-echo "Instalando Docker..."
 curl -sSL https://get.docker.com/ | CHANNEL=stable bash
 systemctl enable --now docker
 
 echo "----------------------------------------------------------------------"
-echo "FINALIZACAO DA INSTALACAO"
-echo "INSTALADOR - CZ7 SOLUTIONS"
+echo "FINALIZADO - BY CZ7 SOLUTIONS (CARLOS DAVI FERREIRA CAFERRO)"
 echo "----------------------------------------------------------------------"
-echo "1. Acesse seu painel pelo navegador."
-echo "2. Faca login com o usuario criado."
-echo "3. Va em Admin -> Locations e crie uma Localizacao."
-echo "4. Va em Admin -> Nodes e crie um Node."
-echo "5. Ao criar o Node, clique na aba 'Configuration'."
-echo "6. Copie o bloco de codigo de configuracao (token)."
-echo "7. Cole o conteudo no arquivo: /etc/pterodactyl/config.yml"
-echo "8. Apos colar, execute o comando: systemctl start wings"
+echo "1. Acesse o painel no navegador."
+echo "2. Login com o usuario criado."
+echo "3. Crie Localizacao e Node no Admin."
+echo "4. Copie o config do Node (YAML)."
+echo "5. Cole em: /etc/pterodactyl/config.yml"
+echo "6. Rode: systemctl start wings"
 echo "----------------------------------------------------------------------"
-echo "Instalacao concluida!"
